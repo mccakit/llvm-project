@@ -1276,6 +1276,7 @@ std::optional<HoverInfo> getHover(ParsedAST &AST, Position Pos,
     HI.Definition =
         URIForFile::canonicalize(Inc.Resolved, AST.tuPath()).file().str();
     HI.DefinitionLanguage = "";
+    HI.IsIncludeDirective = true;
     maybeAddUsedSymbols(AST, HI, Inc);
     return HI;
   }
@@ -1418,6 +1419,60 @@ markup::Document HoverInfo::presentDoxygen() const {
   assert(!Name.empty() && "hover triggered on a nameless symbol");
 
   Header.appendCode(Name);
+  if (IsIncludeDirective) {
+    Header.appendCode(Name);
+
+    if (!Definition.empty())
+      Output.addParagraph().appendCode(Definition);
+
+    if (!UsedSymbolNames.empty()) {
+      Output.addRuler();
+      markup::Paragraph &P = Output.addParagraph();
+      P.appendText("provides ");
+
+      const std::vector<std::string>::size_type SymbolNamesLimit = 5;
+      auto Front = llvm::ArrayRef(UsedSymbolNames).take_front(SymbolNamesLimit);
+
+      llvm::interleave(
+          Front, [&](llvm::StringRef Sym) { P.appendCode(Sym); },
+          [&] { P.appendText(", "); });
+      if (UsedSymbolNames.size() > Front.size()) {
+        P.appendText(" and ");
+        P.appendText(std::to_string(UsedSymbolNames.size() - Front.size()));
+        P.appendText(" more");
+      }
+    }
+
+    return Output;
+  }
+
+  if (!Definition.empty()) {
+    std::string Buffer;
+
+    // Append scope comment, dropping trailing "::".
+    // Note that we don't print anything for global namespace, to not annoy
+    // non-c++ projects or projects that are not making use of namespaces.
+    if (!LocalScope.empty()) {
+      // Container name, e.g. class, method, function.
+      // We might want to propagate some info about container type to print
+      // function foo, class X, method X::bar, etc.
+      Buffer += "// In " + llvm::StringRef(LocalScope).rtrim(':').str() + '\n';
+    } else if (NamespaceScope && !NamespaceScope->empty()) {
+      Buffer += "// In namespace " +
+                llvm::StringRef(*NamespaceScope).rtrim(':').str() + '\n';
+    }
+
+    if (!AccessSpecifier.empty()) {
+      Buffer += AccessSpecifier + ": ";
+    }
+
+    Buffer += Definition;
+
+    Output.addCodeBlock(Buffer, DefinitionLanguage);
+  }
+  else {
+    Header.appendSpace().appendCode(Name);
+  }
 
   if (!Provider.empty()) {
     markup::Paragraph &DI = Output.addParagraph();
@@ -1429,33 +1484,89 @@ markup::Document HoverInfo::presentDoxygen() const {
 
   // Put a linebreak after header to increase readability.
   Output.addRuler();
-  // Print Types on their own lines to reduce chances of getting line-wrapped by
-  // editor, as they might be long.
-  if (ReturnType) {
-    // For functions we display signature in a list form, e.g.:
-    // → `x`
-    // Parameters:
-    // - `bool param1`
-    // - `int param2 = 5`
-    Output.addParagraph().appendText("→ ").appendCode(
-        llvm::to_string(*ReturnType));
-  }
 
   SymbolDocCommentVisitor SymbolDoc(Documentation, CommentOpts);
 
+  if (SymbolDoc.hasBriefCommand()) {
+    SymbolDoc.briefToMarkup(Output.addParagraph());
+    Output.addRuler();
+  }
+
+  // For functions we display signature in a list form, e.g.:
+  // Template Parameters:
+  // - `typename T` - description
+  // Parameters:
+  // - `bool param1` - description
+  // - `int param2 = 5` - description
+  // Returns
+  // `type` - description
+  if (TemplateParameters && !TemplateParameters->empty()) {
+    Output.addParagraph().appendBoldText("Template Parameters:");
+    markup::BulletList &L = Output.addBulletList();
+    for (const auto &Param : *TemplateParameters) {
+      markup::Paragraph &P = L.addItem().addParagraph();
+      P.appendCode(llvm::to_string(Param));
+      if (SymbolDoc.isTemplateParameterDocumented(
+              llvm::to_string(Param.Name))) {
+        P.appendText(" - ");
+        SymbolDoc.templateParameterDocToMarkup(llvm::to_string(Param.Name), P);
+      }
+    }
+    Output.addRuler();
+  }
+
   if (Parameters && !Parameters->empty()) {
-    Output.addParagraph().appendText("Parameters:");
+    Output.addParagraph().appendBoldText("Parameters:");
     markup::BulletList &L = Output.addBulletList();
     for (const auto &Param : *Parameters) {
       markup::Paragraph &P = L.addItem().addParagraph();
       P.appendCode(llvm::to_string(Param));
 
       if (SymbolDoc.isParameterDocumented(llvm::to_string(Param.Name))) {
-        P.appendText(" -");
+        P.appendText(" - ");
         SymbolDoc.parameterDocToMarkup(llvm::to_string(Param.Name), P);
       }
     }
+    Output.addRuler();
   }
+
+  // Print Types on their own lines to reduce chances of getting line-wrapped by
+  // editor, as they might be long.
+  if (ReturnType &&
+      ((ReturnType->Type != "void" && !ReturnType->AKA.has_value()) ||
+       (ReturnType->AKA.has_value() && ReturnType->AKA != "void"))) {
+    Output.addParagraph().appendBoldText("Returns:");
+    markup::Paragraph &P = Output.addParagraph();
+    P.appendCode(llvm::to_string(*ReturnType));
+
+    if (SymbolDoc.hasReturnCommand()) {
+      P.appendText(" - ");
+      SymbolDoc.returnToMarkup(P);
+    }
+    Output.addRuler();
+  }
+
+  switch (Kind) {
+  case index::SymbolKind::Parameter:
+    if (SymbolDoc.isParameterDocumented(Name))
+      SymbolDoc.parameterDocToMarkup(Name, Output.addParagraph());
+    break;
+  case index::SymbolKind::TemplateTypeParm:
+    if (SymbolDoc.isTemplateParameterDocumented(Name))
+      SymbolDoc.templateParameterDocToMarkup(Name, Output.addParagraph());
+    break;
+  default:
+    // add specially handled doxygen commands
+    SymbolDoc.warningsToMarkup(Output);
+    SymbolDoc.notesToMarkup(Output);
+
+    // add any other documentation
+    SymbolDoc.docToMarkup(Output);
+    break;
+  }
+
+  Output.addRuler();
+
   // Don't print Type after Parameters or ReturnType as this will just duplicate
   // the information
   if (Type && !ReturnType && !Parameters)
@@ -1498,41 +1609,6 @@ markup::Document HoverInfo::presentDoxygen() const {
     if (CallPassType->Converted && CalleeArgInfo->Type)
       OS << " (converted to " << CalleeArgInfo->Type->Type << ")";
     Output.addParagraph().appendText(OS.str());
-  }
-
-  if (Kind == index::SymbolKind::Parameter) {
-    if (SymbolDoc.isParameterDocumented(Name))
-      SymbolDoc.parameterDocToMarkup(Name, Output.addParagraph());
-  } else
-    SymbolDoc.docToMarkup(Output);
-
-  if (!Definition.empty()) {
-    Output.addRuler();
-    std::string Buffer;
-
-    if (!Definition.empty()) {
-      // Append scope comment, dropping trailing "::".
-      // Note that we don't print anything for global namespace, to not annoy
-      // non-c++ projects or projects that are not making use of namespaces.
-      if (!LocalScope.empty()) {
-        // Container name, e.g. class, method, function.
-        // We might want to propagate some info about container type to print
-        // function foo, class X, method X::bar, etc.
-        Buffer +=
-            "// In " + llvm::StringRef(LocalScope).rtrim(':').str() + '\n';
-      } else if (NamespaceScope && !NamespaceScope->empty()) {
-        Buffer += "// In namespace " +
-                  llvm::StringRef(*NamespaceScope).rtrim(':').str() + '\n';
-      }
-
-      if (!AccessSpecifier.empty()) {
-        Buffer += AccessSpecifier + ": ";
-      }
-
-      Buffer += Definition;
-    }
-
-    Output.addCodeBlock(Buffer, DefinitionLanguage);
   }
 
   if (!UsedSymbolNames.empty()) {

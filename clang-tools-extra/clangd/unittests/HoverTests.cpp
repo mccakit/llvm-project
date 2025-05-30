@@ -3439,13 +3439,18 @@ TEST(Hover, Present) {
             HI.Name = "foo";
             HI.NamespaceScope.emplace();
           },
-          R"(class foo
+          R"(class
 
-Size: 10 bytes
+template <typename T, typename C = bool> class Foo {}
+
+**Template Parameters:**
+
+- typename T
+- typename C = bool
 
 documentation
 
-template <typename T, typename C = bool> class Foo {})",
+Size: 10 bytes)",
       },
       {
           [](HoverInfo &HI) {
@@ -3465,17 +3470,21 @@ template <typename T, typename C = bool> class Foo {})",
             HI.NamespaceScope = "ns::";
             HI.Definition = "ret_type foo(params) {}";
           },
-          "function foo\n"
-          "\n"
-          "→ ret_type (aka can_ret_type)\n\n"
-          "Parameters:\n\n"
-          "- \n"
-          "- type (aka can_type)\n"
-          "- type foo (aka can_type)\n"
-          "- type foo = default (aka can_type)\n"
-          "\n"
-          "// In namespace ns\n"
-          "ret_type foo(params) {}",
+          R"(function
+
+// In namespace ns
+ret_type foo(params) {}
+
+**Parameters:**
+
+- 
+- type (aka can_type)
+- type foo (aka can_type)
+- type foo = default (aka can_type)
+
+**Returns:**
+
+ret_type (aka can_ret_type))",
       },
       {
           [](HoverInfo &HI) {
@@ -3490,7 +3499,10 @@ template <typename T, typename C = bool> class Foo {})",
             HI.Padding = 32;
             HI.Align = 32;
           },
-          R"(field foo
+          R"(field
+
+// In test::Bar
+def
 
 Type: type (aka can_type)
 
@@ -3498,10 +3510,7 @@ Value = value
 
 Offset: 12 bytes
 
-Size: 4 bytes (+4 bytes padding), alignment 4 bytes
-
-// In test::Bar
-def)",
+Size: 4 bytes (+4 bytes padding), alignment 4 bytes)",
       },
       {
           [](HoverInfo &HI) {
@@ -3516,7 +3525,10 @@ def)",
             HI.Padding = 4;
             HI.Align = 64;
           },
-          R"(field foo
+          R"(field
+
+// In test::Bar
+def
 
 Type: type (aka can_type)
 
@@ -3524,10 +3536,7 @@ Value = value
 
 Offset: 4 bytes and 3 bits
 
-Size: 25 bits (+4 bits padding), alignment 8 bytes
-
-// In test::Bar
-def)",
+Size: 25 bits (+4 bits padding), alignment 8 bytes)",
       },
       {
           [](HoverInfo &HI) {
@@ -3537,7 +3546,7 @@ def)",
             HI.LocalScope = "test::Bar::";
             HI.Definition = "def";
           },
-          R"(field foo
+          R"(field
 
 // In test::Bar
 public: def)",
@@ -3554,12 +3563,14 @@ public: def)",
             HI.ReturnType = {"size_t", "unsigned long"};
             HI.Type = {"size_t ()", "unsigned long ()"};
           },
-          R"(instance-method method
-
-→ size_t (aka unsigned long)
+          R"(instance-method
 
 // In cls<int>
-protected: size_t method())",
+protected: size_t method()
+
+**Returns:**
+
+size_t (aka unsigned long))",
       },
       {
           [](HoverInfo &HI) {
@@ -3578,15 +3589,15 @@ protected: size_t method())",
             HI.Parameters->back().Name = "b";
             HI.Parameters->back().Default = "5";
           },
-          R"(constructor cls
-
-Parameters:
-
-- int a
-- int b = 5
+          R"(constructor
 
 // In cls
-public: cls(int a, int b = 5))",
+public: cls(int a, int b = 5)
+
+**Parameters:**
+
+- int a
+- int b = 5)",
       },
       {
           [](HoverInfo &HI) {
@@ -3596,7 +3607,7 @@ public: cls(int a, int b = 5))",
             HI.NamespaceScope = "ns1::";
             HI.Definition = "union foo {}";
           },
-          R"(union foo
+          R"(union
 
 // In namespace ns1
 private: union foo {})",
@@ -3615,16 +3626,16 @@ private: union foo {})",
             HI.CalleeArgInfo->Default = "7";
             HI.CallPassType = HoverInfo::PassType{PassMode::Value, false};
           },
-          R"(variable foo
+          R"(variable
+
+// In test::Bar
+int foo = 3
 
 Type: int
 
 Value = 3
 
-Passed as arg_a
-
-// In test::Bar
-int foo = 3)",
+Passed as arg_a)",
       },
       {
           [](HoverInfo &HI) {
@@ -3652,16 +3663,16 @@ Passed by value)",
             HI.CalleeArgInfo->Default = "7";
             HI.CallPassType = HoverInfo::PassType{PassMode::Ref, false};
           },
-          R"(variable foo
+          R"(variable
+
+// In test::Bar
+int foo = 3
 
 Type: int
 
 Value = 3
 
-Passed by reference as arg_a
-
-// In test::Bar
-int foo = 3)",
+Passed by reference as arg_a)",
       },
       {
           [](HoverInfo &HI) {
@@ -3677,16 +3688,16 @@ int foo = 3)",
             HI.CalleeArgInfo->Default = "7";
             HI.CallPassType = HoverInfo::PassType{PassMode::Value, true};
           },
-          R"(variable foo
+          R"(variable
+
+// In test::Bar
+int foo = 3
 
 Type: int
 
 Value = 3
 
-Passed as arg_a (converted to alias_int)
-
-// In test::Bar
-int foo = 3)",
+Passed as arg_a (converted to alias_int))",
       },
       {
           [](HoverInfo &HI) {
@@ -3696,7 +3707,7 @@ int foo = 3)",
                             "// Expands to\n"
                             "(1 + 1)";
           },
-          R"(macro PLUS_ONE
+          R"(macro
 
 #define PLUS_ONE(X) (X+1)
 
@@ -3717,21 +3728,22 @@ int foo = 3)",
             HI.CalleeArgInfo->Default = "7";
             HI.CallPassType = HoverInfo::PassType{PassMode::ConstRef, true};
           },
-          R"(variable foo
+          R"(variable
+
+// In test::Bar
+int foo = 3
 
 Type: int
 
 Value = 3
 
-Passed by const reference as arg_a (converted to int)
-
-// In test::Bar
-int foo = 3)",
+Passed by const reference as arg_a (converted to int))",
       },
       {
           [](HoverInfo &HI) {
             HI.Name = "stdio.h";
             HI.Definition = "/usr/include/stdio.h";
+            HI.IsIncludeDirective = true;
           },
           R"(stdio.h
 
@@ -3740,6 +3752,7 @@ int foo = 3)",
       {[](HoverInfo &HI) {
          HI.Name = "foo.h";
          HI.UsedSymbolNames = {"Foo", "Bar", "Bar"};
+         HI.IsIncludeDirective = true;
        },
        R"(foo.h
 
@@ -3747,6 +3760,7 @@ provides Foo, Bar, Bar)"},
       {[](HoverInfo &HI) {
          HI.Name = "foo.h";
          HI.UsedSymbolNames = {"Foo", "Bar", "Baz", "Foobar", "Qux", "Quux"};
+         HI.IsIncludeDirective = true;
        },
        R"(foo.h
 
@@ -3774,17 +3788,17 @@ TEST(Hover, PresentDocumentation) {
          HI.Definition = "void foo()";
          HI.Name = "foo";
        },
-       R"(### function `foo`
+       R"(### function
 
----
-**@brief** brief doc
-
-longer doc
-
----
 ```cpp
 void foo()
-```)"},
+```
+
+---
+brief doc
+
+---
+longer doc)"},
       {[](HoverInfo &HI) {
          HI.Kind = index::SymbolKind::Function;
          HI.Documentation = "@brief brief doc\n\n"
@@ -3793,19 +3807,22 @@ void foo()
          HI.ReturnType = "int";
          HI.Name = "foo";
        },
-       R"(### function `foo`
+       R"(### function
 
----
-→ `int`
-
-**@brief** brief doc
-
-longer doc
-
----
 ```cpp
 int foo()
-```)"},
+```
+
+---
+brief doc
+
+---
+**Returns:**
+
+`int`
+
+---
+longer doc)"},
       {[](HoverInfo &HI) {
          HI.Kind = index::SymbolKind::Function;
          HI.Documentation = "@brief brief doc\n\n"
@@ -3819,25 +3836,27 @@ int foo()
          HI.Parameters->back().Type = "int";
          HI.Parameters->back().Name = "a";
        },
-       R"(### function `foo`
+       R"(### function
+
+```cpp
+int foo(int a)
+```
 
 ---
-→ `int`
+brief doc
 
-Parameters:
+---
+**Parameters:**
 
 - `int a` - this is a param
 
-**@brief** brief doc
+---
+**Returns:**
 
-longer doc
-
-**@return** it returns something
+`int` - it returns something
 
 ---
-```cpp
-int foo(int a)
-```)"},
+longer doc)"},
       {[](HoverInfo &HI) {
          HI.Kind = index::SymbolKind::Function;
          HI.Documentation = "@brief brief doc\n\n"
@@ -3851,25 +3870,27 @@ int foo(int a)
          HI.Parameters->back().Type = "int";
          HI.Parameters->back().Name = "a";
        },
-       R"(### function `foo`
+       R"(### function
+
+```cpp
+int foo(int a)
+```
 
 ---
-→ `int`
+brief doc
 
-Parameters:
+---
+**Parameters:**
 
 - `int a` - this is a param
 
-**@brief** brief doc
+---
+**Returns:**
 
-longer doc
-
-**@return** it returns something
+`int` - it returns something
 
 ---
-```cpp
-int foo(int a)
-```)"},
+longer doc)"},
   };
 
   for (const auto &C : Cases) {
@@ -4046,23 +4067,24 @@ TEST(Hover, PresentRulers) {
   HI.Definition = "def";
 
   llvm::StringRef ExpectedMarkdown = //
-      "### variable `foo`\n"
+      "### variable\n"
       "\n"
-      "---\n"
-      "Value = `val`\n"
-      "\n"
-      "---\n"
       "```cpp\n"
       "def\n"
       "```";
   EXPECT_EQ(HI.present(MarkupKind::Markdown), ExpectedMarkdown);
+      "```\n\n"
+      "---\n"
+      "Value = `val`";
 
-  llvm::StringRef ExpectedPlaintext = R"pt(variable foo
+  EXPECT_EQ(HI.present().asMarkdown(), ExpectedMarkdown);
 
-Value = val
+  llvm::StringRef ExpectedPlaintext = R"pt(variable
 
-def)pt";
-  EXPECT_EQ(HI.present(MarkupKind::PlainText), ExpectedPlaintext);
+def
+
+Value = val)pt";
+  EXPECT_EQ(HI.present().asPlainText(), ExpectedPlaintext);
 }
 
 TEST(Hover, SpaceshipTemplateNoCrash) {

@@ -122,7 +122,7 @@ private:
   const comments::CommandTraits &Traits;
 
   /// If true, the next leading space after a new line is trimmed.
-  bool LastChunkEndsWithNewline = false;
+  bool LastChunkEndsWithNewline = true;
 };
 
 class BlockCommentToMarkupDocument
@@ -194,11 +194,78 @@ public:
 private:
   markup::Document &Out;
   const comments::CommandTraits &Traits;
-  StringRef CommentEscapeMarker;
 };
 
-void SymbolDocCommentVisitor::parameterDocToMarkup(StringRef ParamName,
-                                                   markup::Paragraph &Out) {
+void SymbolDocCommentVisitor::visitBlockCommandComment(
+    const comments::BlockCommandComment *B) {
+  switch (B->getCommandID()) {
+  case comments::CommandTraits::KCI_brief: {
+    if (!BriefParagraph) {
+      BriefParagraph = B->getParagraph();
+      return;
+    }
+    break;
+  }
+  case comments::CommandTraits::KCI_return:
+  case comments::CommandTraits::KCI_returns:
+    if (!ReturnParagraph) {
+      ReturnParagraph = B->getParagraph();
+      return;
+    }
+    break;
+  case comments::CommandTraits::KCI_retval:
+    RetvalParagraphs.push_back(B->getParagraph());
+    return;
+  case comments::CommandTraits::KCI_warning:
+    WarningParagraphs.push_back(B->getParagraph());
+    return;
+  case comments::CommandTraits::KCI_note:
+    NoteParagraphs.push_back(B->getParagraph());
+    return;
+  default:
+    break;
+  }
+
+  // For all other commands, we store them in the UnhandledCommands map.
+  // This allows us to keep the order of the comments.
+  UnhandledCommands[CommentPartIndex] = B;
+  CommentPartIndex++;
+}
+
+void SymbolDocCommentVisitor::paragraphsToMarkup(
+    markup::Document &Out,
+    const llvm::SmallVector<const comments::ParagraphComment *> &Paragraphs)
+    const {
+  if (Paragraphs.empty())
+    return;
+
+  for (const auto *P : Paragraphs) {
+    ParagraphToMarkupDocument(Out.addParagraph(), Traits).visit(P);
+  }
+}
+
+void SymbolDocCommentVisitor::briefToMarkup(markup::Paragraph &Out) const {
+  if (!BriefParagraph)
+    return;
+  ParagraphToMarkupDocument(Out, Traits).visit(BriefParagraph);
+}
+
+void SymbolDocCommentVisitor::returnToMarkup(markup::Paragraph &Out) const {
+  if (!ReturnParagraph)
+    return;
+  ParagraphToMarkupDocument(Out, Traits).visit(ReturnParagraph);
+}
+
+void SymbolDocCommentVisitor::notesToMarkup(markup::Document &Out) const {
+  paragraphsToMarkup(Out, NoteParagraphs);
+}
+
+void SymbolDocCommentVisitor::warningsToMarkup(markup::Document &Out) const {
+  paragraphsToMarkup(Out, WarningParagraphs);
+}
+
+void SymbolDocCommentVisitor::parameterDocToMarkup(
+    StringRef ParamName, markup::Paragraph &Out) const {
   if (ParamName.empty())
     return;
 
@@ -207,9 +274,19 @@ void SymbolDocCommentVisitor::parameterDocToMarkup(StringRef ParamName,
   }
 }
 
-void SymbolDocCommentVisitor::docToMarkup(markup::Document &Out) {
+void SymbolDocCommentVisitor::templateParameterDocToMarkup(
+    StringRef TemplateParamName, markup::Paragraph &Out) const {
+  if (TemplateParamName.empty())
+    return;
+
+  if (const auto *TP = TemplateParameters.lookup(TemplateParamName)) {
+    ParagraphToMarkupDocument(Out, Traits).visit(TP->getParagraph());
+  }
+}
+
+void SymbolDocCommentVisitor::docToMarkup(markup::Document &Out) const {
   for (unsigned I = 0; I < CommentPartIndex; ++I) {
-    if (const auto *BC = BlockCommands.lookup(I)) {
+    if (const auto *BC = UnhandledCommands.lookup(I)) {
       BlockCommentToMarkupDocument(Out, Traits).visit(BC);
     } else if (const auto *P = FreeParagraphs.lookup(I)) {
       ParagraphToMarkupDocument(Out.addParagraph(), Traits).visit(P);

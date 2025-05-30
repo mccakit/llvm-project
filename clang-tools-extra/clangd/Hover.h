@@ -129,6 +129,11 @@ private:
 
   /// Render the hover information as a default documentation.
   markup::Document presentDefault() const;
+  /// True if this symbol is a include directive.
+  bool IsIncludeDirective = false;
+
+  /// Produce a user-readable information.
+  markup::Document present() const;
 };
 
 inline bool operator==(const HoverInfo::PrintedType &LHS,
