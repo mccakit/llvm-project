@@ -8,7 +8,6 @@
 
 // test get_new_handler
 
-
 #include <new>
 #include <cassert>
 
